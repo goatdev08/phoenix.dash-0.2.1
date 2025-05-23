@@ -1,5 +1,4 @@
-
-# ==============================================================================
+ ==============================================================================
 #   IMPORTS Y CONFIGURACIÓN GLOBAL
 # ==============================================================================
 
@@ -8,8 +7,6 @@ from __future__ import annotations
 import pathlib
 import subprocess
 from datetime import datetime
-from functools import lru_cache
-
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -20,7 +17,7 @@ st.set_page_config(layout="wide", page_title="Phoenix Team Analyst 🐦‍🔥")
 #   0. GESTIÓN DE VERSIÓN DINÁMICA
 # ==============================================================================
 
-DEFAULT_VERSION = "0.2.2"
+DEFAULT_VERSION = "0.2.3"
 _version_file = pathlib.Path(__file__).with_name("VERSION")
 if _version_file.exists():
     APP_VERSION = _version_file.read_text().strip()
@@ -188,7 +185,6 @@ tab_graficos, tab_detalles = st.tabs([
 #   7.1 GRÁFICOS COMPARATIVOS
 # ------------------------------------------------------------------------------
 
-@lru_cache(maxsize=128)
 def make_line_fig(df_subset: pd.DataFrame, titulo: str):
     fig = px.line(
         df_subset,
