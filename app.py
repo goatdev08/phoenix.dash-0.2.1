@@ -1,4 +1,10 @@
 
+# ==============================================================================
+#   IMPORTS Y CONFIGURACIÓN GLOBAL
+# ==============================================================================
+
+from __future__ import annotations
+
 import pathlib
 import subprocess
 from datetime import datetime
@@ -8,19 +14,17 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-st.set_page_config(layout="wide")
+st.set_page_config(layout="wide", page_title="Phoenix Team Analyst 🐦‍🔥")
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 0. GESTIÓN DE VERSIÓN DINÁMICA
-# ────────────────────────────────────────────────────────────────────────────────
+# ==============================================================================
+#   0. GESTIÓN DE VERSIÓN DINÁMICA
+# ==============================================================================
 
-DEFAULT_VERSION = "0.2.1"
-
+DEFAULT_VERSION = "0.2.2"
 _version_file = pathlib.Path(__file__).with_name("VERSION")
 if _version_file.exists():
     APP_VERSION = _version_file.read_text().strip()
 else:
-    # Si no hay archivo, intenta extraer la última Git tag
     try:
         APP_VERSION = (
             subprocess.check_output(["git", "describe", "--tags"], stderr=subprocess.DEVNULL)
@@ -30,35 +34,35 @@ else:
     except Exception:
         APP_VERSION = DEFAULT_VERSION
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 1. DETECCIÓN AUTOMÁTICA DE DISPOSITIVO (ESCRITORIO / MÓVIL)
-# ────────────────────────────────────────────────────────────────────────────────
+# ==============================================================================
+#   1. DETECCIÓN AUTOMÁTICA DE DISPOSITIVO (ESCRITORIO / MÓVIL)
+# ==============================================================================
 
 try:
     from streamlit_javascript import st_javascript
 
-    viewport_width = st_javascript("return window.innerWidth;") or 1200
+    raw_vw = st_javascript("return window.innerWidth;")
+    viewport_width = int(float(raw_vw)) if raw_vw else 1200
 except Exception:
-    viewport_width = 1200  # Fallback – escritorio
+    viewport_width = 1200  # Fallback escritorio
 
 is_mobile = viewport_width < 992  # Bootstrap md breakpoint
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 2. CARGA Y NORMALIZACIÓN DE DATOS (con caching agresivo)
-# ────────────────────────────────────────────────────────────────────────────────
+# ==============================================================================
+#   2. CARGA Y NORMALIZACIÓN DE DATOS
+# ==============================================================================
 
 RAW_CSV_URL = "https://raw.githubusercontent.com/goatdev08/phoenix.dash/main/archivo.csv"
 
 
-@st.cache_data(show_spinner="Cargando datos…")
+@st.cache_data(show_spinner="📦 Cargando datos …")
 def load_data(path: str | None = None) -> pd.DataFrame:
-    """Carga el CSV y normaliza nomenclatura."""
+    """Carga el CSV remoto o local y normaliza columnas."""
 
     path = path or RAW_CSV_URL
     df = pd.read_csv(path)
     df.columns = [c.strip().replace("/", "").replace(" ", "_") for c in df.columns]
 
-    # Estandarizar columna de fase (antes Cat_Prueba) y su orden lógico.
     if "Cat_Prueba" in df.columns:
         df.rename(columns={"Cat_Prueba": "Fase"}, inplace=True)
 
@@ -80,11 +84,11 @@ def load_data(path: str | None = None) -> pd.DataFrame:
 
 df = load_data()
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 3. CONSTANTES Y DICCIONARIOS AUXILIARES
-# ────────────────────────────────────────────────────────────────────────────────
+# ==============================================================================
+#   3. CONSTANTES Y DICCIONARIOS
+# ==============================================================================
 
-param_translation = {
+param_translation: dict[str, str] = {
     "T15 (1)": "Tiempo 15m (1)",
     "# de BRZ 1": "Numero de Brazadas (1)",
     "V1": "Velocidad (1)",
@@ -110,199 +114,177 @@ param_categories = {
     "Flechas": ["F1", "F2", "F promedio", "DIST sin F"],
 }
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 4. HEADER Y PANEL DE FILTROS (con session_state)
-# ────────────────────────────────────────────────────────────────────────────────
-
-
-def init_state(key, value):
-    if key not in st.session_state:
-        st.session_state[key] = value
-
-
-init_state("nadadores", [])
-init_state("estilos", [])
-init_state("pruebas", [])
-init_state("fases", [])
-init_state("parametros", [])
+# ==============================================================================
+#   4. HEADER Y PANEL DE FILTROS
+# ==============================================================================
 
 st.title("Phoenix Team Analyst 🐦‍🔥")
 
 with st.sidebar:
-    st.markdown("#### Versión de app")
+    st.markdown("#### Versión de la app")
     st.success(APP_VERSION)
 
-    st.markdown("### Filtros")
+    st.divider()
+    st.markdown("#### Filtros")
 
-    st.session_state["nadadores"] = st.multiselect(
-        "Selecciona hasta 4 nadadores:",
-        df.Nadador.unique(),
-        default=st.session_state["nadadores"],
-        max_selections=4,
+    sel_nadadores = st.multiselect(
+        "Selecciona hasta 4 nadadores:", df.Nadador.unique(), max_selections=4
     )
-
-    st.session_state["estilos"] = (
+    sel_estilos = (
         df.Estilo.unique().tolist()
-        if st.checkbox("Todos los estilos", value=not st.session_state["estilos"])
-        else st.multiselect("Estilo(s):", df.Estilo.unique(), default=st.session_state["estilos"])
+        if st.checkbox("Todos los estilos")
+        else st.multiselect("Estilo(s):", df.Estilo.unique())
     )
-
-    st.session_state["pruebas"] = (
+    sel_pruebas = (
         df.Distancia.unique().tolist()
-        if st.checkbox("Todas las pruebas", value=not st.session_state["pruebas"])
-        else st.multiselect("Prueba(s):", df.Distancia.unique(), default=st.session_state["pruebas"])
+        if st.checkbox("Todas las pruebas")
+        else st.multiselect("Prueba(s):", df.Distancia.unique())
     )
-
-    st.session_state["fases"] = (
+    sel_fases = (
         df.Fase.unique().tolist()
-        if st.checkbox("Todas las fases", value=not st.session_state["fases"])
-        else st.multiselect("Fase(s):", df.Fase.unique(), default=st.session_state["fases"])
+        if st.checkbox("Todas las fases")
+        else st.multiselect("Fase(s):", df.Fase.unique())
     )
-
-    st.session_state["parametros"] = (
+    sel_parametros = (
         df.Parametro.unique().tolist()
-        if st.checkbox("Todos los parámetros", value=not st.session_state["parametros"])
-        else st.multiselect(
-            "Parámetro(s):", df.Parametro.unique(), default=st.session_state["parametros"]
-        )
+        if st.checkbox("Todos los parámetros")
+        else st.multiselect("Parámetro(s):", df.Parametro.unique())
     )
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 5. FILTRADO DE DATAFRAME
-# ────────────────────────────────────────────────────────────────────────────────
+# ==============================================================================
+#   5. FILTRADO DE DATAFRAME
+# ==============================================================================
 
 filtered_df = df[
-    df.Nadador.isin(st.session_state["nadadores"])
-    & df.Estilo.isin(st.session_state["estilos"])
-    & df.Distancia.isin(st.session_state["pruebas"])
-    & df.Fase.isin(st.session_state["fases"])
-    & df.Parametro.isin(st.session_state["parametros"])
+    df.Nadador.isin(sel_nadadores)
+    & df.Estilo.isin(sel_estilos)
+    & df.Distancia.isin(sel_pruebas)
+    & df.Fase.isin(sel_fases)
+    & df.Parametro.isin(sel_parametros)
 ]
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 6. BOTÓN PARA DESCARGAR CSV FILTRADO
-# ────────────────────────────────────────────────────────────────────────────────
+# ==============================================================================
+#   6. DESCARGA DE CSV FILTRADO
+# ==============================================================================
 
-csv_data = filtered_df.to_csv(index=False).encode()
+csv_data = filtered_df.to_csv(index=False).encode("utf-8")
 st.sidebar.download_button(
-    "📥 Descargar datos filtrados",
-    csv_data,
+    label="📥 Descargar datos filtrados",
+    data=csv_data,
     file_name=f"Phoenix_filtered_{datetime.now():%Y%m%d}.csv",
     mime="text/csv",
 )
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 7. TABS PRINCIPALES
-# ────────────────────────────────────────────────────────────────────────────────
+# ==============================================================================
+#   7. TABS PRINCIPALES (Gráficos y Detalles)
+# ==============================================================================
 
-tab1, tab2 = st.tabs(["📊 Gráficos Comparativos", "📋 Detalles por Nadador"])
+tab_graficos, tab_detalles = st.tabs([
+    "📊 Gráficos Comparativos",
+    "📋 Detalles por Nadador",
+])
 
-# ╭──────────────────────────────────────────────────────────────────────────────╮
-# │ TAB 1 · GRÁFICOS COMPARATIVOS                                              │
-# ╰──────────────────────────────────────────────────────────────────────────────╯
+# ------------------------------------------------------------------------------
+#   7.1 GRÁFICOS COMPARATIVOS
+# ------------------------------------------------------------------------------
 
-with tab1:
+@lru_cache(maxsize=128)
+def make_line_fig(df_subset: pd.DataFrame, titulo: str):
+    fig = px.line(
+        df_subset,
+        x="Fase_Orden",
+        y="Valor",
+        color="Nadador",
+        markers=True,
+        line_group="Nadador",
+        hover_data={"Fase": True, "Fase_Orden": False},
+        title=titulo,
+        category_orders={"Fase_Orden": [1, 2, 3]},
+    )
+    fig.update_xaxes(
+        tickvals=[1, 2, 3],
+        ticktext=["Preliminar", "Semifinal", "Final"],
+        title="Fase",
+    )
+    return fig
 
-    # Chips de estilos seleccionados (UX claridad)
-    if st.session_state["estilos"]:
-        st.markdown("**Estilos seleccionados:** " + ", ".join(st.session_state["estilos"]))
-
-    for category, param_list in param_categories.items():
-        selected_in_category = [p for p in param_list if p in filtered_df.Parametro.unique()]
-        if not selected_in_category:
+with tab_graficos:
+    if sel_estilos:
+        st.markdown("**Estilos seleccionados:** " + ", ".join(sel_estilos))
+    for categoria, lista_param in param_categories.items():
+        presentes = [p for p in lista_param if p in filtered_df.Parametro.unique()]
+        if not presentes:
             continue
-
-        st.markdown(f"### {category}")
-
-        for parametro in selected_in_category:
+        st.subheader(categoria)
+        for parametro in presentes:
             nombre_legible = param_translation.get(parametro, parametro)
-            param_df = filtered_df[filtered_df.Parametro == parametro]
-
-            estilos_unicos = param_df.Estilo.unique()
-            n_estilos = len(estilos_unicos)
-
-            # Crear columnas dinámicas si hay múltiples estilos
-            cols = st.columns(n_estilos) if n_estilos > 1 else [st]
-
+            df_param = filtered_df[filtered_df.Parametro == parametro]
+            estilos_unicos = df_param.Estilo.unique()
+            cols = st.columns(len(estilos_unicos)) if len(estilos_unicos) > 1 else [st]
             for idx, estilo in enumerate(estilos_unicos):
-                estilo_df = param_df[param_df.Estilo == estilo]
-
-                @st.cache_resource(show_spinner=False)
-                def make_fig(df_subset: pd.DataFrame, titulo: str):
-                    fig_local = px.line(
-                        df_subset,
-                        x="Fase_Orden",
-                        y="Valor",
-                        color="Nadador",
-                        markers=True,
-                        line_group="Nadador",
-                        hover_data={"Fase": True, "Fase_Orden": False},
-                        title=titulo,
-                    )
-                    fig_local.update_xaxes(visible=False)
-                    return fig_local
-
-                fig_title = f"{nombre_legible} – {estilo}"
-                fig = make_fig(estilo_df, fig_title)
-
-                show_legend = (
-                    not is_mobile or st.checkbox("Mostrar leyenda", key=f"legend_{parametro}_{estilo}")
-                )
+                df_estilo = df_param[df_param.Estilo == estilo]
+                fig = make_line_fig(df_estilo, f"{nombre_legible} – {estilo}")
                 fig.update_layout(
-                    showlegend=show_legend,
-                    legend=dict(orientation="h", yanchor="bottom", y=-0.35, xanchor="center", x=0.5),
-                    margin=dict(t=50, b=30 if is_mobile else 60),
-                    height=350 if is_mobile else 520,
+                    legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center"),
+                    height=320 if is_mobile else 500,
+                    margin=dict(t=50, b=40),
                 )
-
                 cols[idx].plotly_chart(fig, use_container_width=True)
 
-# ╭──────────────────────────────────────────────────────────────────────────────╮
-# │ TAB 2 · DETALLES POR NADADOR                                               │
-# ╰──────────────────────────────────────────────────────────────────────────────╯
+# ------------------------------------------------------------------------------
+#   7.2 DETALLES POR NADADOR
+# ------------------------------------------------------------------------------
 
-with tab2:
-    if st.session_state["nadadores"]:
-        for nadador in st.session_state["nadadores"]:
-            st.markdown(f"#### {nadador}")
+with tab_detalles:
+    if sel_nadadores:
+        for nadador in sel_nadadores:
+            st.markdown(f"### {nadador}")
             sub_df = filtered_df[filtered_df.Nadador == nadador].copy()
-            sub_df["Parametro"] = sub_df["Parametro"].map(param_translation).fillna(sub_df["Parametro"])
-            st.dataframe(sub_df, use_container_width=True, height=300 if is_mobile else 600)
+            sub_df["Parametro"] = sub_df["Parametro"].map(param_translation).fillna(
+                sub_df["Parametro"]
+            )
+            st.dataframe(
+                sub_df,
+                use_container_width=True,
+                height=300 if is_mobile else 600,
+            )
     else:
-        st.info("Selecciona al menos un nadador para ver los detalles.")
+        st.info("Selecciona al menos un nadador para visualizar detalles.")
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 8. RANKING GLOBAL CUANDO NO SE FILTRA NADADOR
-# ────────────────────────────────────────────────────────────────────────────────
+# ==============================================================================
+#   8. RANKING GLOBAL (cuando no se selecciona nadador)
+# ==============================================================================
 
-if not st.session_state["nadadores"]:
-    st.subheader("🏆 Ranking de Nadadores por Estilo y Prueba (Tiempo Total)")
-
-    tiempo_total_df = df[df.Parametro == "T TOTAL"].dropna(subset=["Valor"])
-    grouped = tiempo_total_df.groupby(["Estilo", "Distancia", "Nadador"], as_index=False)["Valor"].min()
-
+if not sel_nadadores:
+    st.header("🏆 Ranking de Nadadores por Estilo y Prueba (Tiempo Total)")
+    ranking_df = (
+        df[df.Parametro == "T TOTAL"]
+        .dropna(subset=["Valor"])
+        .groupby(["Estilo", "Distancia", "Nadador"], as_index=False)["Valor"].min()
+    )
     if is_mobile:
-        grouped["Nadador"] = grouped["Nadador"].apply(lambda x: f"{x.split()[0][0]}. {x.split()[-1]}")
-
-    grouped_sorted = grouped.sort_values(by=["Estilo", "Distancia", "Valor"])
-
-    for (estilo, distancia), group in grouped_sorted.groupby(["Estilo", "Distancia"]):
-        st.markdown(f"### {estilo} – {distancia}m")
-
-        fig = px.bar(
-            group,
+        ranking_df["Nadador"] = ranking_df["Nadador"].apply(
+            lambda x: f"{x.split()[0][0]}. {x.split()[-1]}"
+        )
+    ranking_df = ranking_df.sort_values(by=["Estilo", "Distancia", "Valor"])
+    for (estilo, distancia), grp in ranking_df.groupby(["Estilo", "Distancia"]):
+        st.subheader(f"{estilo} – {distancia}m")
+        fig_rank = px.bar(
+            grp,
             x="Nadador",
             y="Valor",
             color="Nadador",
-            title=f"Ranking – {estilo} {distancia}m (Tiempo Total)",
             labels={"Valor": "Tiempo Total (s)"},
+            title=f"Ranking – {estilo} {distancia}m",
         )
+        fig_rank.update_layout(showlegend=False, height=350 if is_mobile else 520)
+        st.plotly_chart(fig_rank, use_container_width=True)
+        st.dataframe(grp, use_container_width=True, height=250 if is_mobile else 400)
 
-        fig.update_layout(
-            showlegend=False,
-            margin=dict(t=50, b=30 if is_mobile else 60),
-            height=350 if is_mobile else 520,
-        )
+# ==============================================================================
+#   FOOTER
+# ==============================================================================
 
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(group, use_container_width=True, height=300 if is_mobile else 500)
+st.caption(
+    f"© {datetime.now():%Y} República Integra  ·  Versión {APP_VERSION}  ·  Powered by Streamlit"
+)
